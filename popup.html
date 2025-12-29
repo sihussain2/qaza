@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Prayer Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+<div class="container">
+
+  <!-- LEFT TABLE -->
+  <div class="table">
+    <h3>Table 1</h3>
+    <div class="date" id="leftDate"></div>
+
+    <label><input type="checkbox" data-side="left" data-prayer="fajr"> Fajr</label>
+    <label><input type="checkbox" data-side="left" data-prayer="dhuhr"> Dhuhr</label>
+    <label><input type="checkbox" data-side="left" data-prayer="asr"> Asr</label>
+    <label><input type="checkbox" data-side="left" data-prayer="maghrib"> Maghrib</label>
+    <label><input type="checkbox" data-side="left" data-prayer="isha"> Isha</label>
+
+    <button id="leftPrev">Previous</button>
+    <button id="leftNext">Next</button>
+  </div>
+
+  <!-- RIGHT TABLE -->
+  <div class="table">
+    <h3>Table 2</h3>
+    <div class="date" id="rightDate"></div>
+
+    <label><input type="checkbox" data-side="right" data-prayer="fajr"> Fajr</label>
+    <label><input type="checkbox" data-side="right" data-prayer="dhuhr"> Dhuhr</label>
+    <label><input type="checkbox" data-side="right" data-prayer="asr"> Asr</label>
+    <label><input type="checkbox" data-side="right" data-prayer="maghrib"> Maghrib</label>
+    <label><input type="checkbox" data-side="right" data-prayer="isha"> Isha</label>
+
+    <button id="rightPrev">Previous</button>
+    <button id="rightNext">Next</button>
+  </div>
+
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

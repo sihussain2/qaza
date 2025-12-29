@@ -1,0 +1,26 @@
+body {
+  font-family: Arial, sans-serif;
+  width: 560px;
+  padding: 10px;
+}
+
+.container {
+  display: flex;
+  gap: 10px;
+}
+
+.table {
+  border: 1px solid #ccc;
+  padding: 10px;
+  width: 260px;
+}
+
+.table label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.date {
+  font-weight: bold;
+  margin-bottom: 6px;
+}
