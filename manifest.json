@@ -3,7 +3,7 @@
   "name": "Prayer Tracker (Simple)",
   "version": "1.0",
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "index.html"
   },
   "permissions": ["storage"]
 }
