@@ -27,9 +27,17 @@
   </div>
 
   <!-- QAZA -->
-  <div class="table">
+  <div class="table qaza">
     <h3>Qaza</h3>
+
+    <div class="jump">
+      <select id="qazaMonth"></select>
+      <select id="qazaYear"></select>
+    </div>
+
     <div class="date" id="rightDate"></div>
+    <div class="hijri" id="hijriDate"></div>
+    <div class="counter" id="qazaProgress"></div>
 
     <label><input type="checkbox" data-side="right" data-prayer="fajr"> Fajr</label>
     <label><input type="checkbox" data-side="right" data-prayer="dhuhr"> Dhuhr</label>
@@ -39,7 +47,6 @@
 
     <button id="rightPrev">Previous</button>
     <button id="rightNext">Next</button>
-    <button id="rightEarliest">Earliest</button>
 
     <hr>
 

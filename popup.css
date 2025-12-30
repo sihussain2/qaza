@@ -1,36 +1,74 @@
-/* ---------- Base ---------- */
+/* =========================
+   Base / Accessibility
+   ========================= */
+
+:root {
+  --bg: #ffffff;
+  --fg: #000000;
+  --border: #cccccc;
+  --accent: #0066cc;
+}
+
+/* Automatic dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --fg: #f1f1f1;
+    --border: #444;
+    --accent: #4da3ff;
+  }
+}
 
 body {
-  font-family: Arial, sans-serif;
-  padding: 12px;
   margin: 0;
-  font-size: 18px;            /* ⬅ bigger base font */
+  padding: 12px;
+  font-family: Arial, sans-serif;
+  font-size: 18px;
+  background: var(--bg);
+  color: var(--fg);
 }
+
+/* =========================
+   Layout
+   ========================= */
 
 .container {
   display: flex;
   gap: 12px;
 }
 
-/* ---------- Tables ---------- */
-
+/* Tables */
 .table {
-  border: 1px solid #ccc;
-  padding: 12px;
+  border: 2px solid var(--border);
+  padding: 14px;
   flex: 1;
   min-width: 0;
 }
 
 .table h3 {
   margin-top: 0;
-  font-size: 20px;
+  font-size: 22px;
 }
 
-/* ---------- Text ---------- */
+/* Qaza gets visual priority */
+.table.qaza {
+  border-color: var(--accent);
+  background: rgba(0, 102, 204, 0.05);
+}
+
+/* =========================
+   Text
+   ========================= */
 
 .date {
+  font-size: 20px;
   font-weight: bold;
-  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.hijri {
+  font-size: 15px;
+  opacity: 0.8;
   margin-bottom: 8px;
 }
 
@@ -39,39 +77,108 @@ body {
   margin-bottom: 8px;
 }
 
-/* ---------- Checkboxes ---------- */
+/* =========================
+   Month / Year jump
+   ========================= */
+
+.jump {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.jump select {
+  font-size: 16px;
+  padding: 4px 6px;
+}
+
+/* =========================
+   Checkboxes (touch friendly)
+   ========================= */
 
 .table label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 10px;
   cursor: pointer;
 }
 
-/* Bigger checkbox */
 input[type="checkbox"] {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
 }
 
-/* ---------- Buttons ---------- */
+/* Completed Qaza day (read-only) */
+.completed {
+  opacity: 0.6;
+}
+
+/* =========================
+   Buttons
+   ========================= */
 
 button {
   font-size: 16px;
-  padding: 8px 12px;
-  margin: 4px 2px;
-  cursor: pointer;
+  padding: 10px 14px;
+  margin: 6px 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
 }
 
-/* ---------- Mobile layout ---------- */
+button:active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* =========================
+   One-hand mobile layout
+   ========================= */
 
 @media (max-width: 700px) {
+
+  /* Stack tables vertically */
   .container {
     flex-direction: column;
   }
 
-  .table {
-    width: 100%;
+  /* Navigation buttons easier for thumbs */
+  .table button {
+    width: 48%;
+  }
+
+  #leftPrev, #rightPrev {
+    float: left;
+  }
+
+  #leftNext, #rightNext {
+    float: right;
+  }
+
+  .table::after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+}
+
+/* =========================
+   High contrast mode
+   ========================= */
+
+@media (prefers-contrast: more) {
+  body {
+    font-size: 20px;
+  }
+
+  button {
+    border-width: 2px;
+  }
+
+  input[type="checkbox"] {
+    width: 30px;
+    height: 30px;
   }
 }
