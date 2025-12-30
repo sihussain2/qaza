@@ -49,6 +49,29 @@ function hijri(dateStr) {
   }).format(d);
 }
 
+/* ---------- UI additions (created dynamically) ---------- */
+// Create Unlock buttons and Jump-to label dynamically so index.html doesn't need edits
+const leftUnlockBtn = document.createElement('button');
+leftUnlockBtn.id = 'left-unlock';
+leftUnlockBtn.textContent = 'Unlock';
+leftUnlockBtn.style.display = 'none';
+leftUnlockBtn.style.marginLeft = '8px';
+if (leftDateDiv && leftDateDiv.parentNode) leftDateDiv.parentNode.appendChild(leftUnlockBtn);
+
+const rightUnlockBtn = document.createElement('button');
+rightUnlockBtn.id = 'right-unlock';
+rightUnlockBtn.textContent = 'Unlock';
+rightUnlockBtn.style.display = 'none';
+rightUnlockBtn.style.marginLeft = '8px';
+if (rightDateDiv && rightDateDiv.parentNode) rightDateDiv.parentNode.appendChild(rightUnlockBtn);
+
+const qazaJumpLabel = document.createElement('span');
+qazaJumpLabel.id = 'qazaJumpLabel';
+qazaJumpLabel.style.marginRight = '8px';
+qazaJumpLabel.style.fontWeight = '600';
+qazaJumpLabel.textContent = 'Jump to';
+if (qazaMonth && qazaMonth.parentNode) qazaMonth.parentNode.insertBefore(qazaJumpLabel, qazaMonth);
+
 /* ---------- Storage ---------- */
 
 function loadState(cb) {
@@ -90,18 +113,38 @@ function renderSide(state, side) {
       Object.values(state.right.data).filter(isComplete).length;
     qazaProgress.textContent =
       `Completed Qaza Days: ${completedDays}`;
+
+    // Update the Jump label to show which date is being read for
+    if (qazaJumpLabel) qazaJumpLabel.textContent = `Jump to (Reading for ${date})`;
   }
 
   checkboxes.forEach(cb => {
     if (cb.dataset.side === side) {
       cb.checked = !!day[cb.dataset.prayer];
-      cb.disabled = (side === "right" && isComplete(day));
+
+      // Respect an explicit "unlocked" flag stored for the date. If the right-side day
+      // is complete and not unlocked, disable; otherwise keep editable.
+      const unlocked = !!s.data[date].unlocked;
+      cb.disabled = (side === "right" && isComplete(day) && !unlocked);
+
       cb.closest("label").classList.toggle(
         "completed",
-        side === "right" && isComplete(day)
+        side === "right" && isComplete(day) && !unlocked
       );
     }
   });
+
+  // Show or hide unlock button for the given side
+  if (side === 'right') {
+    if (isComplete(day) && !s.data[date].unlocked) {
+      rightUnlockBtn.style.display = 'inline-block';
+    } else {
+      rightUnlockBtn.style.display = 'none';
+    }
+  } else {
+    // left side: keep existing behavior (no lock)
+    leftUnlockBtn.style.display = 'none';
+  }
 }
 
 /* ---------- Qaza jump ---------- */
@@ -139,8 +182,17 @@ checkboxes.forEach(cb => {
       state[side].data[date] ||= emptyDay();
       state[side].data[date][cb.dataset.prayer] = cb.checked;
 
+      // If user manually changed a checkbox on a previously unlocked date,
+      // keep the unlocked flag (so they can edit). If you prefer to clear the
+      // unlocked flag when they change values, uncomment the next line.
+      // delete state[side].data[date].unlocked;
+
       if (side === "right" && isComplete(state.right.data[date])) {
-        state.right.cursorDate = addDaysStr(date, 1);
+        // Auto-advance only if the day is complete and not unlocked. If they've unlocked
+        // the day we assume they're editing and we should not auto-advance.
+        if (!state.right.data[date].unlocked) {
+          state.right.cursorDate = addDaysStr(date, 1);
+        }
       }
 
       saveState(state, () => render(state));
@@ -154,6 +206,27 @@ qazaMonth.onchange = qazaYear.onchange = () => {
     saveState(state, () => render(state));
   });
 };
+
+if (leftUnlockBtn) leftUnlockBtn.onclick = () => {
+  loadState(state => {
+    const side = 'left';
+    const date = state[side].cursorDate;
+    state[side].data[date] ||= emptyDay();
+    state[side].data[date].unlocked = true;
+    saveState(state, () => render(state));
+  });
+};
+
+if (rightUnlockBtn) rightUnlockBtn.onclick = () => {
+  loadState(state => {
+    const side = 'right';
+    const date = state[side].cursorDate;
+    state[side].data[date] ||= emptyDay();
+    state[side].data[date].unlocked = true;
+    saveState(state, () => render(state));
+  });
+};
+
 
 document.getElementById("leftPrev").onclick = () => move("left",-1);
 document.getElementById("leftNext").onclick = () => move("left",1);
