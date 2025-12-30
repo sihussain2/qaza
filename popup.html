@@ -9,10 +9,11 @@
 
 <div class="container">
 
-  <!-- LEFT TABLE -->
+  <!-- DAILY -->
   <div class="table">
-    <h3>Table 1</h3>
+    <h3>Daily</h3>
     <div class="date" id="leftDate"></div>
+    <div class="counter">Completed: <span id="dailyCount"></span>/5</div>
 
     <label><input type="checkbox" data-side="left" data-prayer="fajr"> Fajr</label>
     <label><input type="checkbox" data-side="left" data-prayer="dhuhr"> Dhuhr</label>
@@ -24,9 +25,9 @@
     <button id="leftNext">Next</button>
   </div>
 
-  <!-- RIGHT TABLE -->
+  <!-- QAZA -->
   <div class="table">
-    <h3>Table 2</h3>
+    <h3>Qaza</h3>
     <div class="date" id="rightDate"></div>
 
     <label><input type="checkbox" data-side="right" data-prayer="fajr"> Fajr</label>
@@ -37,6 +38,13 @@
 
     <button id="rightPrev">Previous</button>
     <button id="rightNext">Next</button>
+    <button id="rightEarliest">Earliest</button>
+
+    <hr>
+
+    <button id="saveBtn">Save to File</button>
+    <button id="loadBtn">Load from File</button>
+    <input type="file" id="fileInput" accept="application/json" hidden>
   </div>
 
 </div>

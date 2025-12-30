@@ -24,3 +24,8 @@ body {
   font-weight: bold;
   margin-bottom: 6px;
 }
+
+.counter {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
