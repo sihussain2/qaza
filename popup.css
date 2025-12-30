@@ -1,31 +1,77 @@
+/* ---------- Base ---------- */
+
 body {
   font-family: Arial, sans-serif;
-  width: 560px;
-  padding: 10px;
+  padding: 12px;
+  margin: 0;
+  font-size: 18px;            /* ⬅ bigger base font */
 }
 
 .container {
   display: flex;
-  gap: 10px;
+  gap: 12px;
 }
+
+/* ---------- Tables ---------- */
 
 .table {
   border: 1px solid #ccc;
-  padding: 10px;
-  width: 260px;
+  padding: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
-.table label {
-  display: block;
-  margin-bottom: 4px;
+.table h3 {
+  margin-top: 0;
+  font-size: 20px;
 }
+
+/* ---------- Text ---------- */
 
 .date {
   font-weight: bold;
-  margin-bottom: 6px;
+  font-size: 18px;
+  margin-bottom: 8px;
 }
 
 .counter {
-  font-size: 12px;
-  margin-bottom: 6px;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+/* ---------- Checkboxes ---------- */
+
+.table label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+/* Bigger checkbox */
+input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+}
+
+/* ---------- Buttons ---------- */
+
+button {
+  font-size: 16px;
+  padding: 8px 12px;
+  margin: 4px 2px;
+  cursor: pointer;
+}
+
+/* ---------- Mobile layout ---------- */
+
+@media (max-width: 700px) {
+  .container {
+    flex-direction: column;
+  }
+
+  .table {
+    width: 100%;
+  }
 }
