@@ -1,412 +1,209 @@
-const PRAYERS = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
-const QAZA_START_DATE = "1998-08-07";
-const QAZA_SCAN_KEY = 'qaza_scan_cursor';
+// popup.js
+// Improved navigation logic for Qaza popup
+// - Use cursorDate for display when available
+// - Set initial cursor to the oldest unread item (earliest date)
+// - Keep a separate scanCursor (do not override while navigating)
 
-const leftDateDiv = document.getElementById("leftDate");
-const rightDateDiv = document.getElementById("rightDate");
-const hijriDiv = document.getElementById("hijriDate");
-const dailyCountSpan = document.getElementById("dailyCount");
-const qazaProgress = document.getElementById("qazaProgress");
+// Expected data shape for items (example):
+// [{ id, title, cursorDate, date, createdAt, read }, ...]
 
-const qazaMonth = document.getElementById("qazaMonth");
-const qazaYear = document.getElementById("qazaYear");
+(async function () {
+  // Simple DOM helpers
+  const el = id => document.getElementById(id);
+  const titleEl = el('title') || el('item-title');
+  const dateEl = el('date') || el('item-date');
+  const prevBtn = el('prev');
+  const nextBtn = el('next');
+  const markReadBtn = el('mark-read');
+  const statusEl = el('status');
 
-const saveBtn = document.getElementById("saveBtn");
-const loadBtn = document.getElementById("loadBtn");
-const fileInput = document.getElementById("fileInput");
+  // State
+  let items = [];
+  let cursor = 0; // current visible item index
+  // scanCursor is maintained separately: used by scanning logic and persisted
+  let scanCursor = null;
 
-const checkboxes = document.querySelectorAll("input[data-prayer]");
-
-/* ---------- Utilities ---------- */
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDaysStr(dateStr, delta) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
-function emptyDay() {
-  return { fajr:false, dhuhr:false, asr:false, maghrib:false, isha:false };
-}
-
-function completedCount(day) {
-  return PRAYERS.filter(p => day[p]).length;
-}
-
-function isComplete(day) {
-  return completedCount(day) === 5;
-}
-
-function hijri(dateStr) {
-  const d = new Date(dateStr);
-  return new Intl.DateTimeFormat("en-TN-u-ca-islamic", {
-    day: "numeric",
-    month: "long",
-    year: "numeric"
-  }).format(d);
-}
-
-/* ---------- UI additions (created dynamically) ---------- */
-// Create Unlock buttons and Jump-to label dynamically so index.html doesn't need edits
-const leftUnlockBtn = document.createElement('button');
-leftUnlockBtn.id = 'left-unlock';
-leftUnlockBtn.textContent = 'Unlock';
-leftUnlockBtn.style.display = 'none';
-leftUnlockBtn.style.marginLeft = '8px';
-if (leftDateDiv && leftDateDiv.parentNode) leftDateDiv.parentNode.appendChild(leftUnlockBtn);
-
-const rightUnlockBtn = document.createElement('button');
-rightUnlockBtn.id = 'right-unlock';
-rightUnlockBtn.textContent = 'Unlock';
-rightUnlockBtn.style.display = 'none';
-rightUnlockBtn.style.marginLeft = '8px';
-if (rightDateDiv && rightDateDiv.parentNode) rightDateDiv.parentNode.appendChild(rightUnlockBtn);
-
-const qazaJumpLabel = document.createElement('span');
-qazaJumpLabel.id = 'qazaJumpLabel';
-qazaJumpLabel.style.marginRight = '8px';
-qazaJumpLabel.style.fontWeight = '600';
-qazaJumpLabel.textContent = 'Jump to';
-if (qazaMonth && qazaMonth.parentNode) qazaMonth.parentNode.insertBefore(qazaJumpLabel, qazaMonth);
-
-/* ---------- Storage ---------- */
-
-function loadState(cb) {
-  const raw = localStorage.getItem("prayerState");
-  let state = raw ? JSON.parse(raw) : {};
-  state.left ||= { cursorDate: todayStr(), data: {} };
-  state.right ||= { cursorDate: QAZA_START_DATE, data: {} };
-  if (state.right.cursorDate < QAZA_START_DATE)
-    state.right.cursorDate = QAZA_START_DATE;
-  cb(state);
-}
-
-function saveState(state, cb) {
-  localStorage.setItem("prayerState", JSON.stringify(state));
-  cb && cb();
-}
-
-/* ---------- Qaza scan cursor (performance) ---------- */
-
-function readQazaCursor() {
-  try {
-    return localStorage.getItem(QAZA_SCAN_KEY) || null;
-  } catch (e) { return null; }
-}
-
-function writeQazaCursor(dateStr) {
-  try { localStorage.setItem(QAZA_SCAN_KEY, dateStr); } catch (e) {}
-}
-
-function clampToTodayOrEarlier(dateStr) {
-  const d = new Date(dateStr);
-  const today = new Date();
-  d.setHours(0,0,0,0);
-  today.setHours(0,0,0,0);
-  return d > today ? today.toISOString().slice(0,10) : dateStr;
-}
-
-function findNextIncompleteDate(rightState) {
-  // choose start point: stored cursor or QAZA_START_DATE
-  let cursor = readQazaCursor() || QAZA_START_DATE;
-  cursor = clampToTodayOrEarlier(cursor);
-
-  const start = new Date(cursor);
-  const today = new Date();
-  const qStart = new Date(QAZA_START_DATE);
-  if (start < qStart) start.setTime(qStart.getTime());
-
-  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-    const ds = d.toISOString().slice(0, 10);
-    const day = rightState.data[ds];
-    if (!day || !isComplete(day)) {
-      writeQazaCursor(ds);
-      return ds;
-    }
+  // Helpers
+  function formatDate(d) {
+    if (!d) return '';
+    const date = new Date(d);
+    if (isNaN(date)) return String(d);
+    return date.toLocaleString();
   }
 
-  // nothing incomplete in scanned window — advance cursor to today
-  const todayStrVal = today.toISOString().slice(0,10);
-  writeQazaCursor(todayStrVal);
-  return rightState.cursorDate || todayStrVal;
-}
+  function displayForIndex(i) {
+    if (!items || items.length === 0) return;
+    const it = items[i];
+    if (!it) return;
+    const displayDate = it.cursorDate || it.date || it.createdAt;
+    if (titleEl) titleEl.textContent = it.title || ('#' + (i + 1));
+    if (dateEl) dateEl.textContent = formatDate(displayDate);
+    if (statusEl) statusEl.textContent = it.read ? 'read' : 'unread';
+  }
 
-/* ---------- Prayer times via Aladhan (remote API) ---------- */
+  function clampIndex(i) {
+    if (!items || items.length === 0) return 0;
+    return Math.max(0, Math.min(items.length - 1, i));
+  }
 
-function formatApiTime(raw) {
-  if (!raw) return '';
-  return raw.split(' ')[0];
-}
-
-function setPrayerTimesFromApiTimings(timings) {
-  if (!timings) return;
-  PRAYERS.forEach(prayer => {
-    const key = prayer.charAt(0).toUpperCase() + prayer.slice(1);
-    const apiVal = timings[key] || timings[prayer];
-    const timeText = formatApiTime(apiVal);
-
-    const inputs = document.querySelectorAll(`input[data-prayer="${prayer}"]`);
-    inputs.forEach(input => {
-      const label = input.parentNode;
-      if (!label) return;
-      let span = label.querySelector('.prayer-time');
-      if (!span) {
-        span = document.createElement('span');
-        span.className = 'prayer-time';
-        span.setAttribute('aria-hidden', 'true');
-        span.style.marginLeft = '8px';
-        span.style.opacity = '0.8';
-        label.appendChild(span);
+  function findOldestUnreadIndex() {
+    if (!items || items.length === 0) return 0;
+    let oldestIndex = -1;
+    let oldestTime = Infinity;
+    items.forEach((it, idx) => {
+      if (!it || it.read) return;
+      // Prefer cursorDate for determining order when available
+      const timeSource = it.cursorDate || it.date || it.createdAt;
+      const t = timeSource ? new Date(timeSource).getTime() : NaN;
+      if (isNaN(t)) return; // skip un-parseable
+      if (t < oldestTime) {
+        oldestTime = t;
+        oldestIndex = idx;
       }
-      span.textContent = timeText ? `• ${timeText}` : '';
     });
-  });
-}
-
-function fetchAladhan(lat, lon) {
-  const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=2`;
-  return fetch(url)
-    .then(res => res.json())
-    .then(json => {
-      if (json && json.data && json.data.timings) {
-        setPrayerTimesFromApiTimings(json.data.timings);
-      } else {
-        console.warn('Aladhan response missing timings', json);
-      }
-    })
-    .catch(err => console.warn('Aladhan API fetch failed', err));
-}
-
-function fallbackIpLookupAndFetch() {
-  return fetch('https://ipapi.co/json/')
-    .then(res => res.json())
-    .then(data => {
-      if (data && data.latitude && data.longitude) {
-        return fetchAladhan(data.latitude, data.longitude);
-      } else {
-        console.warn('IP lookup did not return coordinates', data);
-      }
-    })
-    .catch(err => console.warn('IP lookup failed', err));
-}
-
-function locateAndFetchTimes() {
-  if (!('geolocation' in navigator)) {
-    return fallbackIpLookupAndFetch();
-  }
-  const options = { timeout: 7000 };
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      const { latitude, longitude } = pos.coords;
-      try { localStorage.setItem('lastCoords', JSON.stringify({ lat: latitude, lon: longitude })); } catch(e) {}
-      fetchAladhan(latitude, longitude);
-    },
-    err => {
-      console.warn('Geolocation failed or denied, falling back to IP lookup', err);
-      fallbackIpLookupAndFetch();
-    },
-    options
-  );
-}
-
-/* ---------- Rendering ---------- */
-
-function render(state) {
-  renderSide(state, "left");
-  renderSide(state, "right");
-}
-
-function renderSide(state, side) {
-  const s = state[side];
-  const date = s.cursorDate;
-  s.data[date] ||= emptyDay();
-  const day = s.data[date];
-
-  if (side === "left") {
-    leftDateDiv.textContent = date;
-    dailyCountSpan.textContent = completedCount(day);
-  } else {
-    const displayDate = findNextIncompleteDate(state.right);
-    rightDateDiv.textContent = displayDate;
-    hijriDiv.textContent = hijri(displayDate);
-
-    const completedDays = Object.values(state.right.data).filter(isComplete).length;
-    qazaProgress.textContent = `Completed Qaza Days: ${completedDays}`;
-
-    if (qazaJumpLabel) qazaJumpLabel.textContent = 'Jump to';
-
-    let rd = document.getElementById('readingFor');
-    if (!rd) {
-      rd = document.createElement('div');
-      rd.id = 'readingFor';
-      rd.style.marginTop = '6px';
-      rd.style.fontSize = '13px';
-      rd.style.opacity = '0.9';
-      if (rightDateDiv && hijriDiv && rightDateDiv.parentNode) {
-        rightDateDiv.parentNode.insertBefore(rd, hijriDiv);
-      } else if (rightDateDiv && rightDateDiv.parentNode) {
-        rightDateDiv.parentNode.appendChild(rd);
-      } else {
-        document.body.appendChild(rd);
-      }
+    // If we didn't find any unread or parseable date, fallback to first unread by index
+    if (oldestIndex === -1) {
+      const firstUnread = items.findIndex(it => it && !it.read);
+      return firstUnread === -1 ? 0 : firstUnread;
     }
-    rd.textContent = `Reading for ${displayDate}`;
+    return oldestIndex;
   }
 
-  checkboxes.forEach(cb => {
-    if (cb.dataset.side === side) {
-      cb.checked = !!day[cb.dataset.prayer];
-
-      const unlocked = !!s.data[date].unlocked;
-      cb.disabled = (side === "right" && isComplete(day) && !unlocked);
-
-      cb.closest("label").classList.toggle(
-        "completed",
-        side === "right" && isComplete(day) && !unlocked
-      );
+  // Persist scanCursor separately so scanning logic can resume without losing manual navigation
+  async function saveScanCursor(value) {
+    scanCursor = value;
+    if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+      await browser.storage.local.set({ scanCursor });
+    } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      return new Promise(resolve => chrome.storage.local.set({ scanCursor }, resolve));
     }
-  });
+  }
 
-  if (side === 'right') {
-    if (isComplete(day) && !s.data[date].unlocked) {
-      rightUnlockBtn.style.display = 'inline-block';
-    } else {
-      rightUnlockBtn.style.display = 'none';
+  async function loadScanCursor() {
+    if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+      const res = await browser.storage.local.get('scanCursor');
+      scanCursor = res ? res.scanCursor : null;
+    } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      return new Promise(resolve => {
+        chrome.storage.local.get('scanCursor', res => {
+          scanCursor = res ? res.scanCursor : null;
+          resolve();
+        });
+      });
     }
-  } else {
-    leftUnlockBtn.style.display = 'none';
-  }
-}
-
-/* ---------- Qaza jump ---------- */
-
-function setupJump() {
-  for (let m = 0; m < 12; m++) {
-    const opt = document.createElement("option");
-    opt.value = m;
-    opt.textContent = new Date(2000, m).toLocaleString("default", { month: "short" });
-    qazaMonth.appendChild(opt);
   }
 
-  const yearNow = new Date().getFullYear();
-  for (let y = 1998; y <= yearNow; y++) {
-    const opt = document.createElement("option");
-    opt.value = y;
-    opt.textContent = y;
-    qazaYear.appendChild(opt);
+  // Navigation
+  function goToIndex(i) {
+    cursor = clampIndex(i);
+    displayForIndex(cursor);
+    // We intentionally DO NOT overwrite scanCursor here — navigation by user is separate
+    // Save last viewed cursor for UX, but keep it separate from scanCursor
+    saveLastViewedCursor(cursor);
   }
-}
 
-function jumpQaza(state) {
-  const d = new Date(qazaYear.value, qazaMonth.value, 1);
-  const iso = d.toISOString().slice(0,10);
-  state.right.cursorDate = iso < QAZA_START_DATE ? QAZA_START_DATE : iso;
-}
+  function prev() { goToIndex(cursor - 1); }
+  function next() { goToIndex(cursor + 1); }
 
-/* ---------- Events ---------- */
+  async function saveLastViewedCursor(idx) {
+    if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+      await browser.storage.local.set({ lastViewedCursor: idx });
+    } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      return new Promise(resolve => chrome.storage.local.set({ lastViewedCursor: idx }, resolve));
+    }
+  }
 
-checkboxes.forEach(cb => {
-  cb.onchange = () => {
-    loadState(state => {
-      const side = cb.dataset.side;
-      const date = state[side].cursorDate;
-      state[side].data[date] ||= emptyDay();
-      state[side].data[date][cb.dataset.prayer] = cb.checked;
-
-      if (side === "right" && isComplete(state.right.data[date])) {
-        if (!state.right.data[date].unlocked) {
-          state.right.cursorDate = addDaysStr(date, 1);
+  async function loadInitialState() {
+    // Load items from background or storage
+    // This function assumes a sendMessage hook or storage key 'items' exists.
+    // We try multiple fallbacks to be robust in different extension environments.
+    if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
+      try {
+        const res = await browser.runtime.sendMessage({ type: 'getItems' });
+        if (res && Array.isArray(res.items)) {
+          items = res.items;
         }
+      } catch (e) {
+        // ignore
       }
+    }
 
-      saveState(state, () => render(state));
-    });
+    // Fallback: try storage
+    if ((!items || items.length === 0) && typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+      const r = await browser.storage.local.get('items');
+      if (r && Array.isArray(r.items)) items = r.items;
+    }
+
+    if ((!items || items.length === 0) && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      await new Promise(resolve => chrome.storage.local.get('items', res => {
+        if (res && Array.isArray(res.items)) items = res.items;
+        resolve();
+      }));
+    }
+
+    // Ensure items is at least an empty array
+    items = items || [];
+
+    // Load scan cursor if present
+    await loadScanCursor();
+
+    // Determine initial cursor: set to the oldest unread item if any
+    cursor = findOldestUnreadIndex();
+
+    // If we have a persisted lastViewedCursor but no unread items, prefer lastViewedCursor
+    if (items.length > 0) {
+      let lastViewed = null;
+      if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+        const r = await browser.storage.local.get('lastViewedCursor');
+        lastViewed = (r && typeof r.lastViewedCursor === 'number') ? r.lastViewedCursor : null;
+      } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        await new Promise(resolve => chrome.storage.local.get('lastViewedCursor', res => {
+          lastViewed = (res && typeof res.lastViewedCursor === 'number') ? res.lastViewedCursor : null;
+          resolve();
+        }));
+      }
+      // Only use lastViewed if there are no unread items (we prefer oldest unread)
+      const anyUnread = items.some(it => it && it.read === false);
+      if (!anyUnread && typeof lastViewed === 'number') {
+        cursor = clampIndex(lastViewed);
+      }
+    }
+
+    // Final UI update
+    goToIndex(cursor);
+  }
+
+  // Mark current item read
+  async function markCurrentRead() {
+    const it = items[cursor];
+    if (!it) return;
+    it.read = true;
+    // Persist change back to background or storage
+    if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
+      try {
+        await browser.runtime.sendMessage({ type: 'markRead', id: it.id });
+      } catch (e) { /* ignore */ }
+    }
+    if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+      await browser.storage.local.set({ items });
+    } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      await new Promise(resolve => chrome.storage.local.set({ items }, resolve));
+    }
+    displayForIndex(cursor);
+  }
+
+  // Attach UI listeners if present
+  if (prevBtn) prevBtn.addEventListener('click', prev);
+  if (nextBtn) nextBtn.addEventListener('click', next);
+  if (markReadBtn) markReadBtn.addEventListener('click', markCurrentRead);
+
+  // Initialize popup
+  await loadInitialState();
+
+  // Expose for debugging
+  window.qazaPopup = {
+    get items() { return items; },
+    get cursor() { return cursor; },
+    goToIndex, prev, next, saveScanCursor, loadScanCursor,
   };
-});
-
-qazaMonth.onchange = qazaYear.onchange = () => {
-  loadState(state => {
-    jumpQaza(state);
-    saveState(state, () => render(state));
-  });
-};
-
-if (leftUnlockBtn) leftUnlockBtn.onclick = () => {
-  loadState(state => {
-    const side = 'left';
-    const date = state[side].cursorDate;
-    state[side].data[date] ||= emptyDay();
-    state[side].data[date].unlocked = true;
-    saveState(state, () => render(state));
-  });
-};
-
-if (rightUnlockBtn) rightUnlockBtn.onclick = () => {
-  loadState(state => {
-    const side = 'right';
-    const date = state[side].cursorDate;
-    state[side].data[date] ||= emptyDay();
-    state[side].data[date].unlocked = true;
-    saveState(state, () => render(state));
-  });
-};
-
-
-document.getElementById("leftPrev").onclick = () => move("left",-1);
-document.getElementById("leftNext").onclick = () => move("left",1);
-document.getElementById("rightPrev").onclick = () => move("right",-1);
-document.getElementById("rightNext").onclick = () => move("right",1);
-
-function move(side, d) {
-  loadState(state => {
-    state[side].cursorDate = addDaysStr(state[side].cursorDate, d);
-    if (side === "right" && state.right.cursorDate < QAZA_START_DATE)
-      state.right.cursorDate = QAZA_START_DATE;
-    saveState(state, () => render(state));
-  });
-}
-
-/* ---------- File Save / Load ---------- */
-
-saveBtn.onclick = () => {
-  loadState(state => {
-    const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "prayer-data.json";
-    a.click();
-  });
-};
-
-loadBtn.onclick = () => fileInput.click();
-
-fileInput.onchange = () => {
-  const r = new FileReader();
-  r.onload = e => {
-    const parsed = JSON.parse(e.target.result);
-    saveState(parsed, () => render(parsed));
-  };
-  r.readAsText(fileInput.files[0]);
-};
-
-/* ---------- Init ---------- */
-
-setupJump();
-// Display today's date immediately for left side before state loads
-if (leftDateDiv) {
-  const todayDisplay = new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-  leftDateDiv.textContent = todayDisplay;
-}
-
-loadState(state => {
-  state.right.cursorDate = QAZA_START_DATE;
-  saveState(state, () => {
-    render(state);
-    // fetch prayer times after rendering UI
-    try { locateAndFetchTimes(); } catch(e) { console.warn('prayer times init failed', e); }
-  });
-});
+})();
