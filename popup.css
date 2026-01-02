@@ -90,6 +90,15 @@ body {
 .jump select {
   font-size: 16px;
   padding: 4px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.jump select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* =========================
@@ -107,6 +116,12 @@ body {
 input[type="checkbox"] {
   width: 26px;
   height: 26px;
+  cursor: pointer;
+}
+
+input[type="checkbox"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Completed Qaza day (read-only) */
@@ -126,6 +141,17 @@ button {
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--fg);
+  cursor: pointer;
+}
+
+button:hover {
+  background: rgba(0, 102, 204, 0.1);
+  border-color: var(--accent);
+}
+
+button:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 button:active {
@@ -147,20 +173,23 @@ button:active {
   /* Navigation buttons easier for thumbs */
   .table button {
     width: 48%;
+    box-sizing: border-box;
   }
 
+  /* Button container for proper alignment */
+  .table {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Button wrapper to avoid float issues */
   #leftPrev, #rightPrev {
-    float: left;
+    display: inline-block;
+    margin-right: 2%;
   }
 
   #leftNext, #rightNext {
-    float: right;
-  }
-
-  .table::after {
-    content: "";
-    display: block;
-    clear: both;
+    display: inline-block;
   }
 }
 
@@ -188,4 +217,10 @@ button:active {
     width: 48%;
     box-sizing: border-box;
   }
+}
+
+/* File input (hidden but keep accessible) */
+input[type="file"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
