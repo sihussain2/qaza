@@ -178,7 +178,7 @@ button:active {
     vertical-align: top;
   }
 
-  /* Button spacing to avoid gaps */
+  /* Button spacing: 48% + 48% + 2% gap + 2% margin = ~100% */
   #leftPrev, #rightPrev {
     margin-right: 2%;
   }
