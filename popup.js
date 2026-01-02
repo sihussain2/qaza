@@ -1,5 +1,6 @@
 const PRAYERS = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
 const QAZA_START_DATE = "1998-08-07";
+const QAZA_SCAN_KEY = 'qaza_scan_cursor';
 
 const leftDateDiv = document.getElementById("leftDate");
 const rightDateDiv = document.getElementById("rightDate");
@@ -89,6 +90,129 @@ function saveState(state, cb) {
   cb && cb();
 }
 
+/* ---------- Qaza scan cursor (performance) ---------- */
+
+function readQazaCursor() {
+  try {
+    return localStorage.getItem(QAZA_SCAN_KEY) || null;
+  } catch (e) { return null; }
+}
+
+function writeQazaCursor(dateStr) {
+  try { localStorage.setItem(QAZA_SCAN_KEY, dateStr); } catch (e) {}
+}
+
+function clampToTodayOrEarlier(dateStr) {
+  const d = new Date(dateStr);
+  const today = new Date();
+  d.setHours(0,0,0,0);
+  today.setHours(0,0,0,0);
+  return d > today ? today.toISOString().slice(0,10) : dateStr;
+}
+
+function findNextIncompleteDate(rightState) {
+  // choose start point: stored cursor or QAZA_START_DATE
+  let cursor = readQazaCursor() || QAZA_START_DATE;
+  cursor = clampToTodayOrEarlier(cursor);
+
+  const start = new Date(cursor);
+  const today = new Date();
+  const qStart = new Date(QAZA_START_DATE);
+  if (start < qStart) start.setTime(qStart.getTime());
+
+  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    const ds = d.toISOString().slice(0, 10);
+    const day = rightState.data[ds];
+    if (!day || !isComplete(day)) {
+      writeQazaCursor(ds);
+      return ds;
+    }
+  }
+
+  // nothing incomplete in scanned window — advance cursor to today
+  const todayStrVal = today.toISOString().slice(0,10);
+  writeQazaCursor(todayStrVal);
+  return rightState.cursorDate || todayStrVal;
+}
+
+/* ---------- Prayer times via Aladhan (remote API) ---------- */
+
+function formatApiTime(raw) {
+  if (!raw) return '';
+  return raw.split(' ')[0];
+}
+
+function setPrayerTimesFromApiTimings(timings) {
+  if (!timings) return;
+  PRAYERS.forEach(prayer => {
+    const key = prayer.charAt(0).toUpperCase() + prayer.slice(1);
+    const apiVal = timings[key] || timings[prayer];
+    const timeText = formatApiTime(apiVal);
+
+    const inputs = document.querySelectorAll(`input[data-prayer="${prayer}"]`);
+    inputs.forEach(input => {
+      const label = input.parentNode;
+      if (!label) return;
+      let span = label.querySelector('.prayer-time');
+      if (!span) {
+        span = document.createElement('span');
+        span.className = 'prayer-time';
+        span.setAttribute('aria-hidden', 'true');
+        span.style.marginLeft = '8px';
+        span.style.opacity = '0.8';
+        label.appendChild(span);
+      }
+      span.textContent = timeText ? `• ${timeText}` : '';
+    });
+  });
+}
+
+function fetchAladhan(lat, lon) {
+  const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=2`;
+  return fetch(url)
+    .then(res => res.json())
+    .then(json => {
+      if (json && json.data && json.data.timings) {
+        setPrayerTimesFromApiTimings(json.data.timings);
+      } else {
+        console.warn('Aladhan response missing timings', json);
+      }
+    })
+    .catch(err => console.warn('Aladhan API fetch failed', err));
+}
+
+function fallbackIpLookupAndFetch() {
+  return fetch('https://ipapi.co/json/')
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.latitude && data.longitude) {
+        return fetchAladhan(data.latitude, data.longitude);
+      } else {
+        console.warn('IP lookup did not return coordinates', data);
+      }
+    })
+    .catch(err => console.warn('IP lookup failed', err));
+}
+
+function locateAndFetchTimes() {
+  if (!('geolocation' in navigator)) {
+    return fallbackIpLookupAndFetch();
+  }
+  const options = { timeout: 7000 };
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude, longitude } = pos.coords;
+      try { localStorage.setItem('lastCoords', JSON.stringify({ lat: latitude, lon: longitude })); } catch(e) {}
+      fetchAladhan(latitude, longitude);
+    },
+    err => {
+      console.warn('Geolocation failed or denied, falling back to IP lookup', err);
+      fallbackIpLookupAndFetch();
+    },
+    options
+  );
+}
+
 /* ---------- Rendering ---------- */
 
 function render(state) {
@@ -106,24 +230,37 @@ function renderSide(state, side) {
     leftDateDiv.textContent = date;
     dailyCountSpan.textContent = completedCount(day);
   } else {
-    rightDateDiv.textContent = date;
-    hijriDiv.textContent = hijri(date);
+    const displayDate = findNextIncompleteDate(state.right);
+    rightDateDiv.textContent = displayDate;
+    hijriDiv.textContent = hijri(displayDate);
 
-    const completedDays =
-      Object.values(state.right.data).filter(isComplete).length;
-    qazaProgress.textContent =
-      `Completed Qaza Days: ${completedDays}`;
+    const completedDays = Object.values(state.right.data).filter(isComplete).length;
+    qazaProgress.textContent = `Completed Qaza Days: ${completedDays}`;
 
-    // Update the Jump label to show which date is being read for
-    if (qazaJumpLabel) qazaJumpLabel.textContent = `Jump to (Reading for ${date})`;
+    if (qazaJumpLabel) qazaJumpLabel.textContent = 'Jump to';
+
+    let rd = document.getElementById('readingFor');
+    if (!rd) {
+      rd = document.createElement('div');
+      rd.id = 'readingFor';
+      rd.style.marginTop = '6px';
+      rd.style.fontSize = '13px';
+      rd.style.opacity = '0.9';
+      if (rightDateDiv && hijriDiv && rightDateDiv.parentNode) {
+        rightDateDiv.parentNode.insertBefore(rd, hijriDiv);
+      } else if (rightDateDiv && rightDateDiv.parentNode) {
+        rightDateDiv.parentNode.appendChild(rd);
+      } else {
+        document.body.appendChild(rd);
+      }
+    }
+    rd.textContent = `Reading for ${displayDate}`;
   }
 
   checkboxes.forEach(cb => {
     if (cb.dataset.side === side) {
       cb.checked = !!day[cb.dataset.prayer];
 
-      // Respect an explicit "unlocked" flag stored for the date. If the right-side day
-      // is complete and not unlocked, disable; otherwise keep editable.
       const unlocked = !!s.data[date].unlocked;
       cb.disabled = (side === "right" && isComplete(day) && !unlocked);
 
@@ -134,7 +271,6 @@ function renderSide(state, side) {
     }
   });
 
-  // Show or hide unlock button for the given side
   if (side === 'right') {
     if (isComplete(day) && !s.data[date].unlocked) {
       rightUnlockBtn.style.display = 'inline-block';
@@ -142,7 +278,6 @@ function renderSide(state, side) {
       rightUnlockBtn.style.display = 'none';
     }
   } else {
-    // left side: keep existing behavior (no lock)
     leftUnlockBtn.style.display = 'none';
   }
 }
@@ -182,14 +317,7 @@ checkboxes.forEach(cb => {
       state[side].data[date] ||= emptyDay();
       state[side].data[date][cb.dataset.prayer] = cb.checked;
 
-      // If user manually changed a checkbox on a previously unlocked date,
-      // keep the unlocked flag (so they can edit). If you prefer to clear the
-      // unlocked flag when they change values, uncomment the next line.
-      // delete state[side].data[date].unlocked;
-
       if (side === "right" && isComplete(state.right.data[date])) {
-        // Auto-advance only if the day is complete and not unlocked. If they've unlocked
-        // the day we assume they're editing and we should not auto-advance.
         if (!state.right.data[date].unlocked) {
           state.right.cursorDate = addDaysStr(date, 1);
         }
@@ -268,7 +396,17 @@ fileInput.onchange = () => {
 /* ---------- Init ---------- */
 
 setupJump();
+// Display today's date immediately for left side before state loads
+if (leftDateDiv) {
+  const todayDisplay = new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  leftDateDiv.textContent = todayDisplay;
+}
+
 loadState(state => {
   state.right.cursorDate = QAZA_START_DATE;
-  saveState(state, () => render(state));
+  saveState(state, () => {
+    render(state);
+    // fetch prayer times after rendering UI
+    try { locateAndFetchTimes(); } catch(e) { console.warn('prayer times init failed', e); }
+  });
 });
