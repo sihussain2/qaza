@@ -145,7 +145,35 @@ function findNextIncompleteAfter(rightState, fromDate) {
 
 function formatApiTime(raw) {
   if (!raw) return '';
-  return raw.split(' ')[0];
+  const s = String(raw).trim();
+  // Try to capture times like "HH:MM", "HH:MM:SS", optionally followed by AM/PM
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)?$/);
+  if (!m) {
+    // Fallback: the API sometimes includes extra text after the time — take the first token
+    return s.split(' ')[0];
+  }
+
+  let hh = parseInt(m[1], 10);
+  const mm = m[2].padStart(2, '0');
+  const ampm = m[3];
+
+  if (ampm) {
+    // If AM/PM was provided, normalize to a 24-hour number and then format back to 12-hour
+    const period = ampm.toUpperCase();
+    let hh24 = hh;
+    if (period === 'PM' && hh < 12) hh24 = hh + 12;
+    if (period === 'AM' && hh === 12) hh24 = 0;
+    let disp = hh24 % 12;
+    if (disp === 0) disp = 12;
+    return `${disp}:${mm} ${period}`;
+  }
+
+  // No AM/PM provided — interpret as 24-hour time
+  if (hh === 24) hh = 0; // treat 24:00 as midnight
+  const period = hh >= 12 ? 'PM' : 'AM';
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+  return `${hh}:${mm} ${period}`;
 }
 
 function setPrayerTimesFromApiTimings(timings) {
