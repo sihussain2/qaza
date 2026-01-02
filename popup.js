@@ -1,421 +1,169 @@
-// popup.js - Qaza navigation fixes + Aladhan remote times + scan-cursor optimizations
+document.addEventListener('DOMContentLoaded', () => {
+  ensurePrayerSpans();
+  locateAndFetchTimes();
+});
 
-const PRAYERS = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
-const QAZA_START_DATE = "1998-08-07";
-const QAZA_SCAN_KEY = 'qaza_scan_cursor';
+// Ensure placeholders/spans exist for each prayer time so UI updates won't fail
+function ensurePrayerSpans() {
+  const container = document.getElementById('prayer-times');
+  if (!container) return; // nothing to do if popup layout doesn't include prayer-times
 
-const leftDateDiv = document.getElementById("leftDate");
-const rightDateDiv = document.getElementById("rightDate");
-const hijriDiv = document.getElementById("hijriDate");
-const dailyCountSpan = document.getElementById("dailyCount");
-const qazaProgress = document.getElementById("qazaProgress");
-
-const qazaMonth = document.getElementById("qazaMonth");
-const qazaYear = document.getElementById("qazaYear");
-
-const saveBtn = document.getElementById("saveBtn");
-const loadBtn = document.getElementById("loadBtn");
-const fileInput = document.getElementById("fileInput");
-
-const checkboxes = document.querySelectorAll("input[data-prayer]");
-
-/* ---------- Utilities ---------- */
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDaysStr(dateStr, delta) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
-function emptyDay() {
-  return { fajr:false, dhuhr:false, asr:false, maghrib:false, isha:false };
-}
-
-function completedCount(day) {
-  return PRAYERS.filter(p => day[p]).length;
-}
-
-function isComplete(day) {
-  return completedCount(day) === 5;
-}
-
-function hijri(dateStr) {
-  const d = new Date(dateStr);
-  return new Intl.DateTimeFormat("en-TN-u-ca-islamic", {
-    day: "numeric",
-    month: "long",
-    year: "numeric"
-  }).format(d);
-}
-
-/* ---------- UI additions (created dynamically) ---------- */
-const leftUnlockBtn = document.createElement('button');
-leftUnlockBtn.id = 'left-unlock';
-leftUnlockBtn.textContent = 'Unlock';
-leftUnlockBtn.style.display = 'none';
-leftUnlockBtn.style.marginLeft = '8px';
-if (leftDateDiv && leftDateDiv.parentNode) leftDateDiv.parentNode.appendChild(leftUnlockBtn);
-
-const rightUnlockBtn = document.createElement('button');
-rightUnlockBtn.id = 'right-unlock';
-rightUnlockBtn.textContent = 'Unlock';
-rightUnlockBtn.style.display = 'none';
-rightUnlockBtn.style.marginLeft = '8px';
-if (rightDateDiv && rightDateDiv.parentNode) rightDateDiv.parentNode.appendChild(rightUnlockBtn);
-
-const qazaJumpLabel = document.createElement('span');
-qazaJumpLabel.id = 'qazaJumpLabel';
-qazaJumpLabel.style.marginRight = '8px';
-qazaJumpLabel.style.fontWeight = '600';
-qazaJumpLabel.textContent = 'Jump to';
-if (qazaMonth && qazaMonth.parentNode) qazaMonth.parentNode.insertBefore(qazaJumpLabel, qazaMonth);
-
-/* ---------- Storage ---------- */
-
-function loadState(cb) {
-  const raw = localStorage.getItem("prayerState");
-  let state = raw ? JSON.parse(raw) : {};
-  state.left ||= { cursorDate: todayStr(), data: {} };
-  state.right ||= { cursorDate: QAZA_START_DATE, data: {} };
-  if (state.right.cursorDate < QAZA_START_DATE)
-    state.right.cursorDate = QAZA_START_DATE;
-  cb(state);
-}
-
-function saveState(state, cb) {
-  localStorage.setItem("prayerState", JSON.stringify(state));
-  cb && cb();
-}
-
-/* ---------- Qaza scan cursor helpers (performance) ---------- */
-
-function readQazaCursor() {
-  try { return localStorage.getItem(QAZA_SCAN_KEY) || null; } catch (e) { return null; }
-}
-function writeQazaCursor(dateStr) {
-  try { localStorage.setItem(QAZA_SCAN_KEY, dateStr); } catch (e) {}
-}
-function clampToTodayOrEarlier(dateStr) {
-  const d = new Date(dateStr);
-  const today = new Date();
-  d.setHours(0,0,0,0);
-  today.setHours(0,0,0,0);
-  return d > today ? today.toISOString().slice(0,10) : dateStr;
-}
-
-/* Find the oldest (earliest) incomplete Qaza date from start -> today */
-function findOldestIncompleteDate(rightState) {
-  const start = new Date(QAZA_START_DATE);
-  const today = new Date();
-  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-    const ds = d.toISOString().slice(0, 10);
-    const day = rightState.data[ds];
-    if (!day || !isComplete(day)) {
-      writeQazaCursor(ds);
-      return ds;
+  const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  prayers.forEach(prayer => {
+    let el = document.getElementById(prayer + '-time');
+    if (!el) {
+      // create a wrapper row if missing (best-effort)
+      const row = document.createElement('div');
+      row.className = 'prayer-row';
+      const label = document.createElement('span');
+      label.className = 'prayer-label';
+      label.textContent = prayer.charAt(0).toUpperCase() + prayer.slice(1);
+      el = document.createElement('span');
+      el.id = prayer + '-time';
+      el.className = 'prayer-time';
+      el.textContent = '—';
+      row.appendChild(label);
+      row.appendChild(el);
+      container.appendChild(row);
     }
+  });
+}
+
+// Display date with fallback to current local date when Qaza date is missing
+function displayDate(qazaDate) {
+  const dateEl = document.getElementById('display-date');
+  if (!dateEl) return;
+
+  if (qazaDate && typeof qazaDate === 'string' && qazaDate.trim() !== '') {
+    dateEl.textContent = qazaDate;
+    return;
   }
-  const t = today.toISOString().slice(0,10);
-  writeQazaCursor(t);
-  return rightState.cursorDate || t;
-}
 
-/* Find the next incomplete date strictly after fromDate */
-function findNextIncompleteAfter(rightState, fromDate) {
-  const start = new Date(addDaysStr(fromDate, 1));
-  const today = new Date();
-  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-    const ds = d.toISOString().slice(0, 10);
-    const day = rightState.data[ds];
-    if (!day || !isComplete(day)) {
-      writeQazaCursor(ds);
-      return ds;
-    }
+  // Fallback: use local current date formatted as YYYY-MM-DD
+  try {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    dateEl.textContent = `${y}-${m}-${d}`;
+  } catch (err) {
+    // As a last resort, put a safe placeholder
+    dateEl.textContent = 'Date unavailable';
   }
-  const t = today.toISOString().slice(0,10);
-  writeQazaCursor(t);
-  return rightState.cursorDate || t;
 }
 
-/* ---------- Prayer times via Aladhan (remote API) ---------- */
+// Update UI prayer times; uses placeholders when specific times are missing
+function updatePrayerTimes(times = {}) {
+  const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  prayers.forEach(prayer => {
+    const el = document.getElementById(prayer + '-time');
+    if (!el) return; // skip if UI not present
 
-function formatApiTime(raw) {
-  if (!raw) return '';
-  return raw.split(' ')[0];
+    const value = (times[prayer] && String(times[prayer]).trim()) ? times[prayer] : '—';
+    el.textContent = value;
+  });
 }
 
-function setPrayerTimesFromApiTimings(timings) {
-  if (!timings) return;
-  PRAYERS.forEach(prayer => {
-    const key = prayer.charAt(0).toUpperCase() + prayer.slice(1);
-    const apiVal = timings[key] || timings[prayer];
-    const timeText = formatApiTime(apiVal);
-
-    const inputs = document.querySelectorAll(`input[data-prayer="${prayer}"]`);
-    inputs.forEach(input => {
-      const label = input.parentNode;
-      if (!label) return;
-      let span = label.querySelector('.prayer-time');
-      if (!span) {
-        span = document.createElement('span');
-        span.className = 'prayer-time';
-        span.setAttribute('aria-hidden', 'true');
-        span.style.marginLeft = '8px';
-        span.style.opacity = '0.8';
-        label.appendChild(span);
-      }
-      span.textContent = timeText ? `• ${timeText}` : '';
+// Try to locate the user and fetch prayer times. Errors are handled gracefully with fallbacks.
+async function locateAndFetchTimes() {
+  try {
+    // Try geolocation first
+    const position = await getCurrentPosition({ enableHighAccuracy: true, timeout: 5000 }).catch(e => {
+      console.warn('Geolocation failed or denied:', e);
+      return null;
     });
-  });
-}
 
-function fetchAladhan(lat, lon) {
-  const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=2`;
-  return fetch(url)
-    .then(res => res.json())
-    .then(json => {
-      if (json && json.data && json.data.timings) {
-        setPrayerTimesFromApiTimings(json.data.timings);
-      } else {
-        console.warn('Aladhan response missing timings', json);
-      }
-    })
-    .catch(err => console.warn('Aladhan API fetch failed', err));
-}
+    let timesData = null;
 
-function fallbackIpLookupAndFetch() {
-  return fetch('https://ipapi.co/json/')
-    .then(res => res.json())
-    .then(data => {
-      if (data && data.latitude && data.longitude) {
-        return fetchAladhan(data.latitude, data.longitude);
-      } else {
-        console.warn('IP lookup did not return coordinates', data);
-      }
-    })
-    .catch(err => console.warn('IP lookup failed', err));
-}
-
-function locateAndFetchTimes() {
-  if (!('geolocation' in navigator)) {
-    return fallbackIpLookupAndFetch();
-  }
-  const options = { timeout: 7000 };
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      const { latitude, longitude } = pos.coords;
-      try { localStorage.setItem('lastCoords', JSON.stringify({ lat: latitude, lon: longitude })); } catch(e) {}
-      fetchAladhan(latitude, longitude);
-    },
-    err => {
-      console.warn('Geolocation failed or denied, falling back to IP lookup', err);
-      fallbackIpLookupAndFetch();
-    },
-    options
-  );
-}
-
-/* ---------- Rendering ---------- */
-
-function render(state) {
-  renderSide(state, "left");
-  renderSide(state, "right");
-}
-
-function renderSide(state, side) {
-  const s = state[side];
-  const date = s.cursorDate;
-  s.data[date] ||= emptyDay();
-  const day = s.data[date];
-
-  if (side === "left") {
-    leftDateDiv.textContent = date;
-    dailyCountSpan.textContent = completedCount(day);
-  } else {
-    // Display the active cursorDate (so navigation updates UI immediately)
-    const displayDate = s.cursorDate;
-    rightDateDiv.textContent = displayDate;
-    hijriDiv.textContent = hijri(displayDate);
-
-    const completedDays = Object.values(state.right.data).filter(isComplete).length;
-    qazaProgress.textContent = `Completed Qaza Days: ${completedDays}`;
-
-    if (qazaJumpLabel) qazaJumpLabel.textContent = 'Jump to';
-
-    let rd = document.getElementById('readingFor');
-    if (!rd) {
-      rd = document.createElement('div');
-      rd.id = 'readingFor';
-      rd.style.marginTop = '6px';
-      rd.style.fontSize = '13px';
-      rd.style.opacity = '0.9';
-      if (rightDateDiv && hijriDiv && rightDateDiv.parentNode) {
-        rightDateDiv.parentNode.insertBefore(rd, hijriDiv);
-      } else if (rightDateDiv && rightDateDiv.parentNode) {
-        rightDateDiv.parentNode.appendChild(rd);
-      } else {
-        document.body.appendChild(rd);
+    if (position) {
+      const { latitude, longitude } = position.coords;
+      try {
+        timesData = await fetchTimesForLatLon(latitude, longitude);
+      } catch (err) {
+        console.error('Failed to fetch times for coordinates:', err);
       }
     }
-    rd.textContent = `Reading for ${displayDate}`;
-  }
 
-  checkboxes.forEach(cb => {
-    if (cb.dataset.side === side) {
-      cb.checked = !!day[cb.dataset.prayer];
-
-      const unlocked = !!s.data[date].unlocked;
-      cb.disabled = (side === "right" && isComplete(day) && !unlocked);
-
-      cb.closest("label").classList.toggle(
-        "completed",
-        side === "right" && isComplete(day) && !unlocked
-      );
-    }
-  });
-
-  if (side === 'right') {
-    if (isComplete(day) && !s.data[date].unlocked) {
-      rightUnlockBtn.style.display = 'inline-block';
-    } else {
-      rightUnlockBtn.style.display = 'none';
-    }
-  } else {
-    leftUnlockBtn.style.display = 'none';
-  }
-}
-
-/* ---------- Qaza jump ---------- */
-
-function setupJump() {
-  for (let m = 0; m < 12; m++) {
-    const opt = document.createElement("option");
-    opt.value = m;
-    opt.textContent = new Date(2000, m).toLocaleString("default", { month: "short" });
-    qazaMonth.appendChild(opt);
-  }
-
-  const yearNow = new Date().getFullYear();
-  for (let y = 1998; y <= yearNow; y++) {
-    const opt = document.createElement("option");
-    opt.value = y;
-    opt.textContent = y;
-    qazaYear.appendChild(opt);
-  }
-}
-
-function jumpQaza(state) {
-  const d = new Date(qazaYear.value, qazaMonth.value, 1);
-  const iso = d.toISOString().slice(0,10);
-  state.right.cursorDate = iso < QAZA_START_DATE ? QAZA_START_DATE : iso;
-}
-
-/* ---------- Events ---------- */
-
-checkboxes.forEach(cb => {
-  cb.onchange = () => {
-    loadState(state => {
-      const side = cb.dataset.side;
-      const date = state[side].cursorDate;
-      state[side].data[date] ||= emptyDay();
-      state[side].data[date][cb.dataset.prayer] = cb.checked;
-
-      if (side === "right" && isComplete(state.right.data[date])) {
-        if (!state.right.data[date].unlocked) {
-          // advance to the next incomplete date (scan forward)
-          state.right.cursorDate = findNextIncompleteAfter(state.right, date);
+    // If we couldn't fetch by geolocation, try stored coordinates or stored times as fallback
+    if (!timesData) {
+      const stored = localStorage.getItem('qaza_times');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.times) {
+            timesData = parsed;
+            console.info('Using stored times as fallback');
+          }
+        } catch (err) {
+          console.warn('Could not parse stored times:', err);
         }
       }
+    }
 
-      saveState(state, () => render(state));
-    });
-  };
-});
+    // Final fallback: attempt a generic fetch (may use IP geolocation on server side) before giving up
+    if (!timesData) {
+      try {
+        timesData = await fetchTimesFallback();
+      } catch (err) {
+        console.warn('Generic fetch fallback failed:', err);
+      }
+    }
 
-qazaMonth.onchange = qazaYear.onchange = () => {
-  loadState(state => {
-    jumpQaza(state);
-    saveState(state, () => render(state));
-  });
-};
+    // If still no times, update UI with placeholders and return
+    if (!timesData) {
+      displayDate('');
+      updatePrayerTimes();
+      return;
+    }
 
-if (leftUnlockBtn) leftUnlockBtn.onclick = () => {
-  loadState(state => {
-    const side = 'left';
-    const date = state[side].cursorDate;
-    state[side].data[date] ||= emptyDay();
-    state[side].data[date].unlocked = true;
-    saveState(state, () => render(state));
-  });
-};
+    // Use the received qaza date if provided, otherwise fallback inside displayDate
+    displayDate(timesData.qazaDate || timesData.date || '');
 
-if (rightUnlockBtn) rightUnlockBtn.onclick = () => {
-  loadState(state => {
-    const side = 'right';
-    const date = state[side].cursorDate;
-    state[side].data[date] ||= emptyDay();
-    state[side].data[date].unlocked = true;
-    saveState(state, () => render(state));
-  });
-};
+    // Robustly extract times object
+    const timesObj = (timesData.times && typeof timesData.times === 'object') ? timesData.times : timesData;
+    updatePrayerTimes(timesObj || {});
 
+    // Persist for future fallbacks
+    try {
+      localStorage.setItem('qaza_times', JSON.stringify({ qazaDate: timesData.qazaDate || timesData.date || null, times: timesObj || {} }));
+    } catch (err) {
+      console.warn('Could not persist times to localStorage:', err);
+    }
 
-document.getElementById("leftPrev").onclick = () => move("left",-1);
-document.getElementById("leftNext").onclick = () => move("left",1);
-document.getElementById("rightPrev").onclick = () => move("right",-1);
-document.getElementById("rightNext").onclick = () => move("right",1);
+  } catch (err) {
+    // Catch-all: ensure popup doesn't crash. Show placeholders and log error.
+    console.error('Unexpected error in locateAndFetchTimes:', err);
+    displayDate('');
+    updatePrayerTimes();
+  }
+}
 
-function move(side, d) {
-  loadState(state => {
-    state[side].cursorDate = addDaysStr(state[side].cursorDate, d);
-    if (side === "right" && state.right.cursorDate < QAZA_START_DATE)
-      state.right.cursorDate = QAZA_START_DATE;
-    saveState(state, () => render(state));
+// Promisified geolocation
+function getCurrentPosition(options = {}) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      return reject(new Error('Geolocation not supported'));
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
   });
 }
 
-/* ---------- File Save / Load ---------- */
-
-saveBtn.onclick = () => {
-  loadState(state => {
-    const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "prayer-data.json";
-    a.click();
-  });
-};
-
-loadBtn.onclick = () => fileInput.click();
-
-fileInput.onchange = () => {
-  const r = new FileReader();
-  r.onload = e => {
-    const parsed = JSON.parse(e.target.result);
-    saveState(parsed, () => render(parsed));
-  };
-  r.readAsText(fileInput.files[0]);
-};
-
-/* ---------- Init ---------- */
-
-setupJump();
-// Show a user-friendly today label on the left immediately
-if (leftDateDiv) {
-  const todayDisplay = new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-  leftDateDiv.textContent = todayDisplay;
+// Example implementation: replace with your API endpoint/parameters
+async function fetchTimesForLatLon(lat, lon) {
+  // This function should return an object like: { qazaDate: '...', times: { fajr: '05:00', ... } }
+  const url = `https://api.example.com/prayertimes?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+  const res = await fetch(url, { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  // Normalize shape as necessary
+  return data;
 }
 
-// Initialize state and set cursorDate to the oldest unread date
-loadState(state => {
-  // If there is any incomplete date, start there
-  state.right.cursorDate = findOldestIncompleteDate(state.right);
-  saveState(state, () => {
-    render(state);
-    try { locateAndFetchTimes(); } catch(e) { console.warn('prayer times init failed', e); }
-  });
-});
+// Generic fallback fetch that may use IP-based geolocation server-side
+async function fetchTimesFallback() {
+  const url = `https://api.example.com/prayertimes/default`;
+  const res = await fetch(url, { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return data;
+}
