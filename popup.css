@@ -174,22 +174,17 @@ button:active {
   .table button {
     width: 48%;
     box-sizing: border-box;
-  }
-
-  /* Button container for proper alignment */
-  .table {
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* Button wrapper to avoid float issues */
-  #leftPrev, #rightPrev {
     display: inline-block;
+    vertical-align: top;
+  }
+
+  /* Button spacing to avoid gaps */
+  #leftPrev, #rightPrev {
     margin-right: 2%;
   }
 
   #leftNext, #rightNext {
-    display: inline-block;
+    margin-left: 0;
   }
 }
 
