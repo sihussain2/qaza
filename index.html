@@ -58,5 +58,20 @@
 </div>
 
 <script src="popup.js"></script>
+
+<!-- Inline script: display today's date in the Daily table on load -->
+<script>
+(function() {
+  const leftDateDiv = document.getElementById('leftDate');
+  if (!leftDateDiv) return;
+  const today = new Date();
+  leftDateDiv.textContent = today.toLocaleDateString(undefined, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+})();
+</script>
 </body>
 </html>
