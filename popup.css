@@ -168,17 +168,24 @@ button:active {
    High contrast mode
    ========================= */
 
-@media (prefers-contrast: more) {
-  body {
-    font-size: 20px;
-  }
+/* Actions table (moved outside of .container) */
+.table.actions {
+  margin-top: 12px;
+  /* Keep same visual style as other tables but span the full width */
+}
 
-  button {
-    border-width: 2px;
-  }
+.table.actions h3 {
+  margin-top: 0;
+}
 
-  input[type="checkbox"] {
-    width: 30px;
-    height: 30px;
+.table.actions button {
+  margin-right: 8px;
+}
+
+/* Make sure action buttons remain touch-friendly on small screens */
+@media (max-width: 700px) {
+  .table.actions button {
+    width: 48%;
+    box-sizing: border-box;
   }
 }
